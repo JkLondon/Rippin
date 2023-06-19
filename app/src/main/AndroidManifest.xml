@@ -7,7 +7,9 @@
     <uses-permission android:name = "android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name = "android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name= "android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.SCAN_ALWAYS_AVAILABLE" />
     <application
+        android:usesCleartextTraffic="true"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"

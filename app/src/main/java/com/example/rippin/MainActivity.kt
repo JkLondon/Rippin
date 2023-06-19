@@ -1,6 +1,8 @@
 package com.example.rippin
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.os.Build
 import androidx.appcompat.app.AppCompatActivity
@@ -11,132 +13,130 @@ import android.view.View
 import android.widget.EditText
 import android.widget.TextView
 import androidx.annotation.RequiresApi
-import com.example.rippin.R
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import com.android.volley.Request
+import com.android.volley.RequestQueue
+import com.android.volley.toolbox.JsonObjectRequest
+import com.android.volley.toolbox.Volley
 import com.jjoe64.graphview.GraphView
 import com.jjoe64.graphview.series.DataPoint
 import com.jjoe64.graphview.series.PointsGraphSeries
+import leakcanary.LeakCanary
+import org.json.JSONObject
+import java.lang.ref.WeakReference
 import java.text.SimpleDateFormat
 import java.util.*
 
 class MainActivity : AppCompatActivity() {
-    var handler: Handler = Handler()
-    var runnable: Runnable? = null
-    private var delay = 1000
-    private val dbmPoints = mutableListOf<DataPoint>()
-    var t = 0
-    lateinit var graphView: GraphView
+    private var requestQueue: RequestQueue? = null
+    private var delay = 500
+    private val timer = Timer()
+    private var ssidText: WeakReference<TextView>? = null
+    private var rssiText: WeakReference<TextView>? = null
+    private var percText: WeakReference<TextView>? = null
+    private var channelWidthText: WeakReference<TextView>? = null
+    private var freqText: WeakReference<TextView>? = null
+    private var timeText: WeakReference<TextView>? = null
+    private var userInput: WeakReference<EditText>? = null
+    private var ssid = ""
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         Log.d("MyLog", "onCreate")
         val tvTest = findViewById<TextView>(R.id.ssidText)
-        tvTest.text = "Нажми на кнопку"
+        tvTest.text = "Press the button"
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+                1
+            )
+        }
+        ssidText = WeakReference(findViewById(R.id.ssidText))
+        rssiText = WeakReference(findViewById(R.id.rssiText))
+        percText = WeakReference(findViewById(R.id.percText))
+        channelWidthText = WeakReference(findViewById(R.id.channelWidthText))
+        freqText = WeakReference(findViewById(R.id.freqText))
+        timeText = WeakReference(findViewById(R.id.timeText))
+        userInput = WeakReference(findViewById(R.id.userInputWifiName))
     }
 
     fun onClickStop(view: View) {
-        handler.removeCallbacks(runnable!!)
-        graphView = findViewById(R.id.idGraphView)
-        graphView.title = "зависимость силы сигнала от времени"
-        // on below line we are creating a new data
-        // point series for our point graph series.
-        // we are calling get data point method to add
-        // data point to our point graph series
-        val series: PointsGraphSeries<DataPoint> = PointsGraphSeries<DataPoint>(getDataPoint())
-        Log.d("wifi", dbmPoints.toString())
-        dbmPoints.clear()
-        t = 0
-        graphView.removeAllSeries()
-        // on below line we are adding series to graph view
-        graphView.addSeries(series)
-
-        // on below line we are setting scrollable
-        // for point graph view
-        graphView.viewport.isScrollable = true
-
-        // on below line we are setting scalable.
-        graphView.viewport.isScalable = true
-
-        // on below line we are setting scalable y
-        graphView.viewport.setScalableY(true)
-
-        // on below line we are setting scrollable y
-        graphView.viewport.setScrollableY(true)
-
-        // on below line we are setting shape for series.
-        series.shape = PointsGraphSeries.Shape.POINT
-
-        // on below line we are setting size for series.
-        series.size = 5f
-
-        // on below line we are setting color for series.
-        series.color = R.color.purple_200
-
-    }
-
-    private fun getDataPoint(): Array<DataPoint> {
-        return dbmPoints.toTypedArray()
+        timer.cancel()
     }
 
     @RequiresApi(Build.VERSION_CODES.M)
     fun onClickTest(view: View) {
-        val ssidText = findViewById<TextView>(R.id.ssidText)
-        val rssiText = findViewById<TextView>(R.id.rssiText)
-        val percText = findViewById<TextView>(R.id.percText)
-        val channelWidthText = findViewById<TextView>(R.id.channelWidthText)
-        val freqText = findViewById<TextView>(R.id.freqText)
-        val timeText = findViewById<TextView>(R.id.timeText)
+        val userInputText = userInput?.get()?.text.toString().lowercase()
+        var rssi = 0
         val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
 
-        val userInput = findViewById<EditText>(R.id.userInputWifiName)
+        timer.schedule(object : TimerTask() {
+            override fun run() {
+                wifiManager.startScan()
+                var scanResults = wifiManager.scanResults
 
-        var ssidTextRaw = ""
-        var rssiTextRaw = ""
-        var percTextRaw = ""
-        var channelWidthTextRaw = ""
-        var freqTextRaw = ""
-        var rssi = 0
-        t = 0
-        handler.postDelayed(Runnable {
-            handler.postDelayed(runnable!!, delay.toLong())
-            wifiManager.startScan()
-            val scanResults = wifiManager.scanResults
-            for (scanResult in scanResults) {
-                // Check if the SSID matches your hotspot name
-                if (scanResult.SSID.lowercase() ==  userInput.text.toString().lowercase()) {
-                    // Get the RSSI value in dBm
-                    rssi = scanResult.level
-                    val freq = scanResult.frequency
-                    val channelWidth = scanResult.channelWidth
+                for (i in 0 until scanResults.size) {
+                    // Check if the SSID matches your hotspot name
+                    var scanResult = scanResults[i]
+                    if (scanResult.SSID.lowercase() ==  userInputText) {
+                        // Get the RSSI value in dBm
+                        rssi = scanResult.level
+                        val freq = scanResult.frequency
+                        val channelWidth = scanResult.channelWidth
 
-                    // Convert the RSSI value to a percentage using a utility method
-                    val percentage = getWifiStrengthPercentage(rssi)
-                    Log.d("wifi", "Hotspot SSID: ${scanResult.SSID} RSSI: $rssi dBm $percentage%")
-                    // Print the results
-                    ssidTextRaw = "Hotspot SSID: ${scanResult.SSID} "
-                    rssiTextRaw = "Hotspot RSSI: $rssi dBm "
-                    percTextRaw = "Hotspot Percentage: $percentage% "
-                    channelWidthTextRaw = "Hotspot ChannelWidth: $channelWidth "
-                    freqTextRaw = "Hotspot Frequency: $freq "
+                        // Convert the RSSI value to a percentage using a utility method
+                        val percentage = getWifiStrengthPercentage(rssi)
+                        ssid = scanResult.SSID
+                        Log.d("wifi", "Hotspot SSID: ${scanResult.SSID} RSSI: $rssi dBm $percentage%")
+                        // Print the results
+                        ssidText?.get()?.text = "Hotspot SSID: ${scanResult.SSID} "
+                        rssiText?.get()?.text = "Hotspot RSSI: $rssi dBm "
+                        percText?.get()?.text = "Hotspot Percentage: $percentage% "
+                        channelWidthText?.get()?.text = "Hotspot ChannelWidth: $channelWidth "
+                        freqText?.get()?.text = "Hotspot Frequency: $freq "
+
+                        scanResult = null
+                        break
+                    }
+                    scanResult = null
                 }
+                scanResults = null
+
+                val currentUnixTime = System.currentTimeMillis() / 1000L
+                val currentUnixTimeString = currentUnixTime.toString()
+                timeText?.get()?.text = currentUnixTimeString
+
+                val url = "http://81.163.27.74:3000/data"
+                val jsonObject = JSONObject()
+                jsonObject.put("rssi", rssi)
+                jsonObject.put("time", currentUnixTimeString)
+                jsonObject.put("ssid", ssid)
+
+                requestQueue?.cancelAll("tag_request")
+                requestQueue?.stop()
+                requestQueue = Volley.newRequestQueue(applicationContext)
+                val request = JsonObjectRequest(
+                    Request.Method.POST, url, jsonObject,
+                    { response ->
+                        val responseString = response.toString()
+                        Log.d("HTTP", "Response: $responseString")
+                    },
+                    { error ->
+                        // Обработка ошибки
+                        Log.e("HTTP", "Error: $error")
+                    }).apply {
+                    tag = "tag_request"
+                }
+
+                requestQueue?.add(request)
+                System.gc()
             }
-            ssidText.text = ssidTextRaw
-            rssiText.text = rssiTextRaw
-            percText.text = percTextRaw
-            channelWidthText.text = channelWidthTextRaw
-            freqText.text = freqTextRaw
-
-            val time = Calendar.getInstance().time
-            val formatter = SimpleDateFormat("HH:mm:ss")
-            val current = formatter.format(time)
-            timeText.text = current
-            dbmPoints.add(DataPoint(t.toDouble(), rssi.toDouble()))
-            t += 1
-        }.also { runnable = it }, delay.toLong())
-
-        // A utility method that converts RSSI value to percentage
-
+        }, 0, delay.toLong())
     }
-
     private fun getWifiStrengthPercentage(rssi: Int): Int {
         // The minimum and maximum RSSI values for Wi-Fi networks are -100 dBm and -30 dBm respectively
         val minRssi = -100
